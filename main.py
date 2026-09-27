@@ -34,6 +34,23 @@ def load_config():
     return {"server": {"host": "0.0.0.0", "port": 8765, "debug": False}}
 
 CFG = load_config()
+
+# Railway / 云环境变量覆盖
+_env_port = os.environ.get("PORT")
+if _env_port:
+    CFG.setdefault("server", {})["port"] = int(_env_port)
+
+# 环境变量覆盖 LLM 配置（Railway 上通过 Dashboard 设置）
+_llm_key = os.environ.get("LLM_API_KEY")
+_llm_url = os.environ.get("LLM_BASE_URL")
+_llm_model = os.environ.get("LLM_MODEL")
+if _llm_key:
+    CFG.setdefault("llm", {})["api_key"] = _llm_key
+if _llm_url:
+    CFG.setdefault("llm", {})["base_url"] = _llm_url
+if _llm_model:
+    CFG.setdefault("llm", {}).setdefault("models", {})["chat"] = _llm_model
+
 SERVER_CFG = CFG.get("server", {})
 HOST = SERVER_CFG.get("host", "0.0.0.0")
 PORT = SERVER_CFG.get("port", 8765)
@@ -205,8 +222,7 @@ def serve_project_file(name, filename):
 
 @app.route("/workbench")
 def workbench():
-    workbench_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ai-workbench')
-    return send_from_directory(workbench_dir, 'ai-workbench.html')
+    return send_from_directory(str(BASE_DIR), 'workbench.html')
 
 # ============================================================
 # 入口
