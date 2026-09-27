@@ -12,15 +12,25 @@ AI Factory Dispatcher · 流水线调度器 (便携版)
   python dispatcher.py --resume projects/naozhoudao-20260926
 """
 
-import os, sys, json, time, shutil, hashlib, argparse, subprocess
+import os, sys, json, time, shutil, hashlib, argparse, subprocess, traceback
 from datetime import datetime
 from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR))
+sys.path.insert(0, str(BASE_DIR / "scripts"))
+
+# LLM 客户端 + 角色人设
+import llm_client
+try:
+    from scripts.roles import get_role, pick_line, format_role_message
+except ImportError:
+    from roles import get_role, pick_line, format_role_message
 
 # ============================================================
 # 配置（可通过环境变量覆盖）
 # ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "input"
 PROJECTS_DIR = BASE_DIR / "projects"
 CONFIG_DIR = BASE_DIR / "config"
@@ -286,6 +296,273 @@ def run_node_L42(proj_dir, req):
     write_json(proj_dir / "nodes" / "L4.2_timeline.node.json", node)
     return True
 
+# ============================================================
+# LLM 增强节点执行器（调用豆包生成创意内容）
+# ============================================================
+
+def _gather_context(proj_dir, req, extra=""):
+    """汇总项目上下文（请求 + 前面节点的输出），供 LLM 参考"""
+    parts = []
+    topic = req.get("topic") or ""
+    if topic:
+        parts.append(f"项目主题: {topic}")
+    if req.get("style_reference"):
+        parts.append(f"风格参考: {req.get('style_reference')}")
+    if req.get("platform"):
+        parts.append(f"目标平台: {req.get('platform')}")
+    if req.get("target_duration_sec"):
+        parts.append(f"目标时长: {req.get('target_duration_sec')} 秒")
+
+    nodes_dir = proj_dir / "nodes"
+    if nodes_dir.exists():
+        for nf in sorted(nodes_dir.iterdir()):
+            fname = nf.stem
+            if fname.endswith("_placeholder") or "placeholder" in fname:
+                continue
+            try:
+                nd = read_json(nf)
+                nd_id = nd.get("node_id", nf.stem)
+                content = nd.get("payload", {}).get("content")
+                if content:
+                    parts.append(f"[{nd_id} 已产出]\n{content[:1500]}")
+            except Exception:
+                continue
+    if extra:
+        parts.append(extra)
+    return "\n".join(parts)
+
+
+def _save_node(proj_dir, node_id, stage, content, role_id, extra=None):
+    """统一保存节点产物"""
+    node = {
+        "schema_version": "1.0.0",
+        "node_id": node_id,
+        "stage": stage,
+        "produced_by": f"dispatcher-llm-{role_id}",
+        "produced_at": datetime.now().isoformat(),
+        "upstream": [],
+        "status": "ok",
+        "payload": {"content": content},
+    }
+    if extra:
+        node["payload"].update(extra)
+    safe = node_id.replace(".", "_")
+    write_json(proj_dir / "nodes" / f"{safe}.node.json", node)
+    return node
+
+
+def _llm_run(proj_dir, req, node_id, task_instruction, extra_context="", temperature=0.8):
+    """
+    通用 LLM 节点执行：按角色人设调用豆包生成创意内容。
+    返回 (content, None)；LLM 不可用或出错时返回 None，走文档降级。
+    """
+    role = get_role(node_id)
+    try:
+        opener = pick_line(node_id, "start")
+    except Exception:
+        opener = "收到。"
+    system_prompt = (
+        f"你是 AI 工厂里的「{role['name']}」{role['icon']}。\n"
+        f"你的行事风格：{role['tone']}。\n"
+        f"开头先说一句（自然、像群聊里有人接话）：{opener}\n"
+        f"{task_instruction}\n"
+        f"请用简体中文，输出结构清晰、可直接交付给下游节点使用的成品内容。"
+    )
+    context = _gather_context(proj_dir, req, extra_context)
+    user_message = f"项目上下文：\n{context}\n\n任务：\n{task_instruction}"
+    content = llm_client.chat(system_prompt, user_message, temperature=temperature)
+    return content
+
+
+def _parse_list(content):
+    """从 LLM 文本中粗提取清单项（兼容 markdown 列表/数字列表）"""
+    items = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # 去掉 -、*、数字编号开头
+        cleaned = line.lstrip("-*• \t").strip()
+        if not cleaned:
+            continue
+        # 跳过标题行
+        if cleaned.startswith("#"):
+            continue
+        items.append(cleaned)
+    return items
+
+
+def run_node_L11(proj_dir, req):
+    """L1.1 · 对标片拆解（拆解师）"""
+    log("=" * 60)
+    log("L1.1 · 对标片拆解")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L1.1",
+        '请对目标任务（主题/风格参考）进行"对标片拆解"：\n'
+        "1) 拆解出视听结构：开场钩子、节奏、转场、情绪曲线\n"
+        "2) 提炼可复用的创作公式（结构公式 + 文案公式）\n"
+        "3) 列出关键看点与目标人群\n"
+        "用分级标题和要点输出。",
+        temperature=0.85,
+    )
+    if not content:
+        log("L1.1 LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L1.1")
+    _save_node(proj_dir, "L1.1", "creative", content or "对标片拆解（自动生成占位）", role["id"])
+    log("✓ L1.1 完成")
+    return True
+
+
+def run_node_L21(proj_dir, req):
+    """L2.1 · 逐镜脚本（脚本师）"""
+    log("=" * 60)
+    log("L2.1 · 逐镜脚本")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L2.1",
+        "基于前面的拆解与配方卡，撰写一条抖音短视频的完整逐镜脚本：\n"
+        "按镜头编号逐个列出，每个镜头包含：景别、画面内容、字幕/文案、旁白口播、音效建议、时长（秒）。\n"
+        "最后给出旁白全文和整体节奏说明。",
+        temperature=0.85,
+    )
+    if not content:
+        log("L2.1 LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L2.1")
+    _save_node(proj_dir, "L2.1", "creative", content or "逐镜脚本（自动生成占位）", role["id"])
+    log("✓ L2.1 完成")
+    return True
+
+
+def run_node_L22(proj_dir, req):
+    """L2.2 · 镜头分类（分镜师）"""
+    log("=" * 60)
+    log("L2.2 · 镜头分类")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L2.2",
+        "基于逐镜脚本，将每个镜头分类并匹配素材类型：\n"
+        "为每个镜头标注【类别】：实拍/空镜/图标动效/地图路线/封面卡。\n"
+        "并给出每个镜头建议使用的素材来源。输出为镜头分类表。",
+        temperature=0.75,
+    )
+    if not content:
+        log("L2.2 LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L2.2")
+    _save_node(proj_dir, "L2.2", "creative", content or "镜头分类（自动生成占位）", role["id"])
+    log("✓ L2.2 完成")
+    return True
+
+
+def run_node_L3A(proj_dir, req):
+    """L3A · 地图路线动图（地图师）"""
+    log("=" * 60)
+    log("L3A · 地图路线动图")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L3A",
+        "为视频设计一条地图路线动图（用于展示地理轨迹/导航感）：\n"
+        "1) 起终点坐标与途经点（给出经纬度建议）\n"
+        "2) 路线描边的视觉样式（颜色、粗细、发光）\n"
+        "3) 相机运镜节奏（拉远/跟随/落点）\n"
+        "输出为地图动图制作规格说明。",
+        temperature=0.7,
+    )
+    if not content:
+        log("L3A LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L3A")
+    _save_node(proj_dir, "L3A", "asset", content or "地图路线动图规格（占位）", role["id"])
+    log("✓ L3A 完成")
+    return True
+
+
+def run_node_L3C(proj_dir, req):
+    """L3C · 图标生成（图标师）"""
+    log("=" * 60)
+    log("L3C · 图标生成")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L3C",
+        "为视频设计一套风格统一的动态图标/图形元素（转场、点缀、进度条等）：\n"
+        "1) 图标清单（名称、用途、出现位置）\n"
+        "2) 每个图标的造型与配色（与整体视觉配方一致）\n"
+        "3) 动效建议\n"
+        "输出为图标设计规格说明。",
+        temperature=0.75,
+    )
+    if not content:
+        log("L3C LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L3C")
+    _save_node(proj_dir, "L3C", "asset", content or "图标设计（占位）", role["id"])
+    log("✓ L3C 完成")
+    return True
+
+
+def run_node_L3D(proj_dir, req):
+    """L3D · 封面生成（封面师）"""
+    log("=" * 60)
+    log("L3D · 封面生成")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L3D",
+        "为视频设计封面图（保证点击率）：\n"
+        "1) 3 个封面备选方案（构图、主文案、副文案、配色）\n"
+        "2) 视觉冲击力说明\n"
+        "输出为封面设计方案。",
+        temperature=0.8,
+    )
+    if not content:
+        log("L3D LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L3D")
+    _save_node(proj_dir, "L3D", "asset", content or "封面设计（占位）", role["id"])
+    log("✓ L3D 完成")
+    return True
+
+
+def run_node_L41(proj_dir, req):
+    """L4.1 · 配音生成（配音师）"""
+    log("=" * 60)
+    log("L4.1 · 配音生成")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L4.1",
+        "基于逐镜脚本，撰写完整的配音旁白稿：\n"
+        "1) 分段口播文案（与镜头对应）\n"
+        "2) 每段语气提示（重音、停顿、情绪）\n"
+        "3) 配音总时长与语速建议\n"
+        "输出为配音脚本。",
+        temperature=0.7,
+    )
+    if not content:
+        log("L4.1 LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L4.1")
+    _save_node(proj_dir, "L4.1", "asset", content or "配音稿（占位）", role["id"])
+    log("✓ L4.1 完成")
+    return True
+
+
+def run_node_L51(proj_dir, req):
+    """L5.1 · 发布文案（文案师）"""
+    log("=" * 60)
+    log("L5.1 · 发布文案")
+    log("=" * 60)
+    content = _llm_run(
+        proj_dir, req, "L5.1",
+        "基于整个项目内容，撰写发布文案：\n"
+        "1) 3 个标题备选（吸引点击）\n"
+        "2) 视频简介文案\n"
+        "3) 话题标签清单（抖音风格）\n"
+        "输出为发布文案包。",
+        temperature=0.85,
+    )
+    if not content:
+        log("L5.1 LLM 不可用，使用降级占位", "WARN")
+    role = get_role("L5.1")
+    _save_node(proj_dir, "L5.1", "creative", content or "发布文案（占位）", role["id"])
+    log("✓ L5.1 完成")
+    return True
+
+
 def run_node_generic(node_id, proj_dir, req):
     log(f"节点 {node_id}: 暂未实现，跳过（占位）")
     node = {
@@ -300,7 +577,19 @@ def run_node_generic(node_id, proj_dir, req):
 # 主调度器
 # ============================================================
 
-NODE_RUNNERS = {"L1.2": run_node_L12, "L3B": run_node_L3B, "L4.2": run_node_L42}
+NODE_RUNNERS = {
+    "L1.1": run_node_L11,
+    "L1.2": run_node_L12,
+    "L2.1": run_node_L21,
+    "L2.2": run_node_L22,
+    "L3A": run_node_L3A,
+    "L3B": run_node_L3B,
+    "L3C": run_node_L3C,
+    "L3D": run_node_L3D,
+    "L4.1": run_node_L41,
+    "L4.2": run_node_L42,
+    "L5.1": run_node_L51,
+}
 
 def run_pipeline(proj_dir, req):
     proj_dir = Path(proj_dir)
