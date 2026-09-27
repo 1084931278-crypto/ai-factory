@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Factory · 本地控制台</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header h1 span { color: var(--accent); }
+  .header .status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .header .status-badge.online { border-color: var(--green); color: var(--green); }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: var(--dim); }
+  .input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .input-group input {
+    flex: 1;
+    min-width: 200px;
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: #21262d;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+  .input-group input:focus { border-color: var(--accent); }
+  .btn {
+    padding: 10px 20px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all .15s;
+    background: var(--accent);
+    color: #fff;
+    white-space: nowrap;
+  }
+  .btn:hover { opacity: .85; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-green { background: var(--green); }
+  .btn-dim { background: #21262d; border: 1px solid var(--border); color: var(--text); }
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .table th, .table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .table th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+  .table tr:hover td { background: rgba(255,255,255,.03); }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .tag-done { background: rgba(63,185,80,.15); color: var(--green); }
+  .tag-running { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .tag-failed { background: rgba(248,81,73,.15); color: var(--red); }
+  .tag-created { background: rgba(88,166,255,.15); color: var(--accent); }
+  .logs-box {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .logs-box .line { color: var(--dim); }
+  .logs-box .line.info { color: var(--accent); }
+  .logs-box .line.warn { color: var(--yellow); }
+  .logs-box .line.error { color: var(--red); }
+  .msg { padding: 12px; border-radius: var(--radius); margin: 8px 0; display: none; }
+  .msg.show { display: block; }
+  .msg-ok { background: rgba(63,185,80,.1); border: 1px solid var(--green); }
+  .msg-err { background: rgba(248,81,73,.1); border: 1px solid var(--red); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-card .num { font-size: 28px; font-weight: 700; }
+  .stat-card .label { font-size: 12px; color: var(--dim); margin-top: 4px; }
+  @media (max-width: 640px) {
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>AI</span> Factory · 本地控制台</h1>
+  <div id="statusBadge" class="status-badge">检查中...</div>
+</div>
+
+<div class="container">
+
+  <!-- 快捷统计 -->
+  <div class="stats-grid" id="statsGrid"></div>
+
+  <!-- 提交指令 -->
+  <div class="card">
+    <h2>🚀 提交新任务</h2>
+    <div class="input-group">
+      <input id="taskInput" type="text" placeholder="例: 做一条硇洲岛的抖音视频，参考鱼鱼大王风格" onkeydown="if(event.key==='Enter')submitTask()">
+      <button class="btn" id="submitBtn" onclick="submitTask()">开始制作</button>
+    </div>
+    <div id="resultMsg" class="msg"></div>
+  </div>
+
+  <!-- 项目列表 -->
+  <div class="card">
+    <h2>📁 项目列表</h2>
+    <div style="overflow-x:auto">
+      <table class="table" id="projectTable">
+        <thead><tr><th>项目名</th><th>主题</th><th>状态</th><th>进度</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody id="projectBody"></tbody>
+      </table>
+    </div>
+    <div style="text-align:center;padding:20px;color:var(--dim);display:none" id="noProjects">暂无项目</div>
+  </div>
+
+  <!-- 配置 -->
+  <div class="card">
+    <h2>⚙️ 配置（LLM / API）</h2>
+    <div class="input-group">
+      <input id="apiKeyInput" type="password" placeholder="API Key" style="flex:2">
+      <input id="modelInput" type="text" placeholder="模型 Endpoint" style="flex:2">
+      <button class="btn btn-green" onclick="saveConfig()">保存</button>
+    </div>
+    <div id="configMsg" class="msg"></div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="card">
+    <h2>📋 运行日志</h2>
+    <div class="logs-box" id="logBox"><div class="line">等待日志...</div></div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// 状态检查 & 数据加载
+// ============================================================
+
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const data = await r.json();
+    const badge = document.getElementById('statusBadge');
+    badge.textContent = '✅ 服务运行中';
+    badge.className = 'status-badge online';
+
+    // 统计卡片
+    const projects = data.projects || [];
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card"><div class="num" style="color:var(--accent)">${data.total_projects}</div><div class="label">总项目数</div></div>
+      <div class="stat-card"><div class="num" style="color:var(--green)">${projects.filter(p=>p.status==='done').length}</div><div class="label">已完成</div></div>
+      <div class="stat-card"><div class="num" style="color:var(--yellow)">${projects.filter(p=>p.status==='running').length}</div><div class="label">进行中</div></div>
+      <div class="stat-card"><div class="num" style="color:var(--red)">${projects.filter(p=>p.status==='failed').length}</div><div class="label">已失败</div></div>
+      <div class="stat-card"><div class="num" style="color:${data.config_loaded?'var(--green)':'var(--red)'}">${data.config_loaded?'已配置':'未配置'}</div><div class="label">API Key</div></div>
+    `;
+
+    // 加载配置
+    const cfg = await (await fetch('/api/config')).json();
+    if (cfg.config?.llm?.api_key && cfg.config.llm.api_key !== 'YOUR_API_KEY_HERE') {
+      document.getElementById('apiKeyInput').value = cfg.config.llm.api_key;
+    }
+    if (cfg.config?.llm?.models?.chat) {
+      document.getElementById('modelInput').value = cfg.config.llm.models.chat;
+    }
+  } catch(e) {
+    document.getElementById('statusBadge').textContent = '❌ 无法连接';
+  }
+}
+
+async function loadProjects() {
+  try {
+    const r = await fetch('/api/projects');
+    const data = await r.json();
+    const tbody = document.getElementById('projectBody');
+    const none = document.getElementById('noProjects');
+    tbody.innerHTML = '';
+    if (!data.projects || data.projects.length === 0) {
+      none.style.display = 'block';
+      return;
+    }
+    none.style.display = 'none';
+    data.projects.forEach(p => {
+      const statusMap = {
+        'done': '<span class="tag tag-done">已完成</span>',
+        'running': '<span class="tag tag-running">运行中</span>',
+        'failed': '<span class="tag tag-failed">失败</span>',
+        'created': '<span class="tag tag-created">已创建</span>',
+      };
+      const progress = `${p.completed_nodes}/11`;
+      const time = p.finished_at || p.started_at;
+      const timeStr = time ? time.replace('T',' ').slice(0,19) : '-';
+      const detailBtn = p.status === 'done' ? `<button class="btn btn-dim" style="padding:4px 10px;font-size:12px" onclick="viewProject('${p.name}')">详情</button>` : '';
+      tbody.innerHTML += `<tr>
+        <td style="font-family:monospace;font-size:12px">${p.name}</td>
+        <td>${p.topic}</td>
+        <td>${statusMap[p.status] || p.status}</td>
+        <td>${progress}</td>
+        <td style="font-size:12px;color:var(--dim)">${timeStr}</td>
+        <td>${detailBtn}</td>
+      </tr>`;
+    });
+  } catch(e) {}
+}
+
+// ============================================================
+// 提交任务
+// ============================================================
+
+async function submitTask() {
+  const input = document.getElementById('taskInput');
+  const btn = document.getElementById('submitBtn');
+  const msg = document.getElementById('resultMsg');
+  const text = input.value.trim();
+  if (!text) { showMsg(msg, '请输入指令', 'err'); return; }
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+  try {
+    const r = await fetch('/api/trigger', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text})
+    });
+    const data = await r.json();
+    if (data.ok) {
+      showMsg(msg, '✅ 任务已提交，正在后台执行，请查看项目列表', 'ok');
+      input.value = '';
+      setTimeout(loadProjects, 2000);
+    } else {
+      showMsg(msg, '❌ ' + (data.error || '未知错误'), 'err');
+    }
+  } catch(e) {
+    showMsg(msg, '❌ 提交失败: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+  btn.textContent = '开始制作';
+}
+
+// ============================================================
+// 配置保存
+// ============================================================
+
+async function saveConfig() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  const model = document.getElementById('modelInput').value.trim();
+  const msg = document.getElementById('configMsg');
+  if (!key) { showMsg(msg, '请输入 API Key', 'err'); return; }
+  try {
+    // 先读现有配置
+    const r = await fetch('/api/config');
+    const cur = await r.json();
+    const cfg = cur.config || {};
+    if (!cfg.llm) cfg.llm = {};
+    cfg.llm.api_key = key;
+    if (!cfg.llm.models) cfg.llm.models = {};
+    cfg.llm.models.chat = model || cfg.llm.models.chat || 'YOUR_MODEL_ENDPOINT';
+    const r2 = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(cfg)
+    });
+    const d = await r2.json();
+    if (d.ok) showMsg(msg, '✅ 配置已保存', 'ok');
+    else showMsg(msg, '❌ 保存失败', 'err');
+  } catch(e) {
+    showMsg(msg, '❌ ' + e.message, 'err');
+  }
+}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'msg show ' + (type === 'ok' ? 'msg-ok' : 'msg-err');
+  setTimeout(() => el.className = 'msg', 4000);
+}
+
+// ============================================================
+// 项目详情
+// ============================================================
+
+async function viewProject(name) {
+  const w = window.open('', '_blank');
+  if (!w) return;
+  const r = await fetch(`/api/project/${name}`);
+  const data = await r.json();
+  if (!data.ok) { w.document.write('Error: ' + data.error); return; }
+  const p = data.project;
+  w.document.write(`
+    <html><head>
+    <title>${name} · 项目详情</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+      body{font-family:-apple-system,sans-serif;background:#0d1117;color:#e6edf3;padding:24px;max-width:900px;margin:0 auto}
+      h1{font-size:20px;border-bottom:1px solid #30363d;padding-bottom:12px}
+      pre{background:#161b22;padding:12px;border-radius:8px;overflow-x:auto;font-size:13px;border:1px solid #30363d}
+      .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px}
+      .badge-done{background:rgba(63,185,80,.15);color:#3fb950}
+      .badge-failed{background:rgba(248,81,73,.15);color:#f85149}
+      .badge-running{background:rgba(210,153,34,.15);color:#d29922}
+      .btn{padding:8px 16px;border-radius:6px;border:none;background:#58a6ff;color:#fff;cursor:pointer;text-decoration:none;display:inline-block;margin:4px}
+      .section{margin:16px 0}
+      .section h2{font-size:14px;color:#8b949e;margin-bottom:8px}
+    </style>
+    </head><body>
+    <h1>📁 ${name} <span class="badge badge-${p.status.status}">${p.status.status}</span></h1>
+  `);
+  if (p.has_final) {
+    w.document.write(`<div class="section"><a class="btn" href="/projects/${name}/final.mp4" target="_blank">🎬 查看成片</a></div>`);
+  }
+  w.document.write(`
+    <div class="section"><h2>指令</h2><pre>${escapeHTML(JSON.stringify(p.request, null, 2))}</pre></div>
+    <div class="section"><h2>状态</h2><pre>${escapeHTML(JSON.stringify(p.status, null, 2))}</pre></div>
+    <div class="section"><h2>节点 (${p.nodes.length})</h2><pre>${escapeHTML(JSON.stringify(p.nodes, null, 2))}</pre></div>
+    <div class="section"><h2>素材 (${p.assets.length})</h2><p>${p.assets.map(a => a).join(', ') || '无'}</p></div>
+    <script>
+    function escapeHTML(s) {
+      return JSON.stringify(s).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    <\/script>
+    </body></html>
+  `);
+}
+
+function escapeHTML(s) {
+  if (typeof s !== 'string') s = JSON.stringify(s, null, 2);
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ============================================================
+// 日志轮询
+// ============================================================
+
+async function loadLogs() {
+  try {
+    const r = await fetch('/api/logs');
+    const data = await r.json();
+    const box = document.getElementById('logBox');
+    if (data.logs && data.logs.length > 0) {
+      box.innerHTML = data.logs.map(line => {
+        const cls = line.includes('[ERROR]') ? 'error' : line.includes('[WARN]') ? 'warn' : 'info';
+        return `<div class="line ${cls}">${escapeHTML(line)}</div>`;
+      }).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+  } catch(e) {}
+}
+
+// ============================================================
+// 自动轮询
+// ============================================================
+
+checkStatus();
+loadProjects();
+loadLogs();
+setInterval(loadProjects, 5000);
+setInterval(loadLogs, 3000);
+</script>
+</body>
+</html>

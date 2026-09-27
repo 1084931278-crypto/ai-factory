@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 运行时生成
+projects/
+input/
+output/
+
+# 配置（不含示例）
+config/config.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 压缩包
+*.zip
+*.tar.gz
+
+# 日志
+*.log

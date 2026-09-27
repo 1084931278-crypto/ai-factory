@@ -1,0 +1,908 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://douyin-pipeline.local/schemas/contracts.schema.json",
+  "title": "抖音剪辑流水线 · 节点接口契约",
+  "description": "契约先行：任何一个模型/工具的产出，都必须包一层 Envelope（信封），并携带 payload（载荷）。node_id 决定 payload 必须符合哪个子 schema。校验脚本 validate_pipeline.py 会强制检查这一层。",
+  "version": "1.0.0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "node_id",
+    "stage",
+    "produced_by",
+    "produced_at",
+    "upstream",
+    "recipe_ref",
+    "artifacts",
+    "status",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "node_id": { "$ref": "#/$defs/NodeId" },
+    "stage": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "1=拆解蒸馏 2=脚本生产 3=视觉资产分层生成 4=合成剪辑 5=发布运营"
+    },
+    "produced_by": { "$ref": "#/$defs/Producer" },
+    "produced_at": { "$ref": "#/$defs/IsoDateTime" },
+    "upstream": {
+      "type": "array",
+      "description": "本节点的输入来源。每个上游产物都必须带 artifact_id + sha256，实现「谁产出的、哪一版」可追溯。",
+      "items": { "$ref": "#/$defs/UpstreamRef" }
+    },
+    "recipe_ref": {
+      "$ref": "#/$defs/FileRef",
+      "description": "本次产出所锚定的视觉配方卡版本。全流程所有节点必须指向同一 sha256，否则视为风格漂移。"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Artifact" }
+    },
+    "status": { "enum": ["ok", "needs_review", "failed"] },
+    "notes": { "type": "string", "maxLength": 2000 },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "node_id": { "const": "L1.1" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 1 }, "payload": { "$ref": "#/$defs/BreakdownPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L1.2" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 1 }, "payload": { "$ref": "#/$defs/RecipeCardPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L2.1" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 2 }, "payload": { "$ref": "#/$defs/ScriptPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L2.2" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 2 }, "payload": { "$ref": "#/$defs/ShotMapPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L3A" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 3 }, "payload": { "$ref": "#/$defs/MapAssetPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L3B" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 3 }, "payload": { "$ref": "#/$defs/VideoAssetPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L3C" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 3 }, "payload": { "$ref": "#/$defs/IconAssetPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L3D" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 3 }, "payload": { "$ref": "#/$defs/CoverAssetPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L4.1" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 4 }, "payload": { "$ref": "#/$defs/AudioPayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L4.2" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 4 }, "payload": { "$ref": "#/$defs/TimelinePayload" } } }
+    },
+    {
+      "if": { "properties": { "node_id": { "const": "L5.1" } }, "required": ["node_id"] },
+      "then": { "properties": { "stage": { "const": 5 }, "payload": { "$ref": "#/$defs/PublishPayload" } } }
+    }
+  ],
+  "additionalProperties": false,
+
+  "$defs": {
+    "NodeId": {
+      "enum": ["L1.1", "L1.2", "L2.1", "L2.2", "L3A", "L3B", "L3C", "L3D", "L4.1", "L4.2", "L5.1"],
+      "description": "节点编号，与《硇洲岛实操手册》中的 12 个节点一一对应。"
+    },
+    "IsoDateTime": { "type": "string", "format": "date-time" },
+    "Sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "Slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "HexColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "ShotId": { "type": "string", "pattern": "^S[0-9]{2,3}$" },
+
+    "Producer": {
+      "type": "object",
+      "description": "谁产出的。tool=承载工具，model=真正干活的模型/引擎，run_id 用于同一模型的多次尝试。",
+      "required": ["tool", "model", "run_id"],
+      "properties": {
+        "tool": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{4,64}$" },
+        "operator": { "type": "string" },
+        "cost_cny": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "FileRef": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/Sha256" }
+      },
+      "additionalProperties": false
+    },
+
+    "UpstreamRef": {
+      "type": "object",
+      "required": ["node_id", "artifact_id", "sha256"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/NodeId" },
+        "artifact_id": { "$ref": "#/$defs/Slug" },
+        "sha256": { "$ref": "#/$defs/Sha256" }
+      },
+      "additionalProperties": false
+    },
+
+    "Canvas": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+
+    "MediaSpec": {
+      "type": "object",
+      "description": "媒体硬指标。生成类模型（生图/生视频/配音）无法直接吐 JSON，因此必须由探针脚本（validate_pipeline.py --stamp）回填这一段。视觉素材必须有 width/height；纯音频没有尺寸，故改为二者满足其一即可。",
+      "anyOf": [
+        { "required": ["width", "height"] },
+        { "required": ["has_audio"] }
+      ],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "aspect_ratio": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "fps": { "type": "number", "exclusiveMinimum": 0 },
+        "video_codec": { "type": "string" },
+        "pix_fmt": { "type": "string" },
+        "has_audio": { "type": "boolean" },
+        "audio_codec": { "type": "string" },
+        "sample_rate": { "type": "integer", "minimum": 8000 },
+        "channels": { "type": "integer", "minimum": 1 },
+        "bitrate_kbps": { "type": "number", "minimum": 1 },
+        "transparent_bg": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "Artifact": {
+      "type": "object",
+      "description": "一件产出物。artifact_id 在整个项目内必须唯一，供下游 upstream 引用。",
+      "required": ["artifact_id", "kind", "path", "sha256", "recipe_section"],
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/Slug" },
+        "kind": { "enum": ["image", "video", "audio", "text", "timeline", "doc", "data", "font"] },
+        "path": { "type": "string", "minLength": 1, "description": "相对项目根目录的路径，禁止绝对路径" },
+        "sha256": { "$ref": "#/$defs/Sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "media": { "$ref": "#/$defs/MediaSpec" },
+        "recipe_section": {
+          "enum": ["map", "pip", "icon", "color", "subtitle", "cover", "audio", "none"],
+          "description": "该产出对应配方卡的哪一段，决定后面用哪套阈值去校验画面"
+        },
+        "shot_id": { "$ref": "#/$defs/ShotId" }
+      },
+      "additionalProperties": false
+    },
+
+    "Tolerances": {
+      "type": "object",
+      "description": "配方卡的可量化容差。初版是经验值，跑满 3 条后必须用实测中位数回填（自校准）。",
+      "required": [
+        "brightness_avg",
+        "saturation_avg",
+        "contrast_rms",
+        "temperature_k",
+        "palette_delta_e",
+        "route_color_delta_e",
+        "consistency_chi2",
+        "black_frame_ratio"
+      ],
+      "properties": {
+        "brightness_avg": { "type": "number", "minimum": 0, "maximum": 1 },
+        "saturation_avg": { "type": "number", "minimum": 0, "maximum": 1 },
+        "contrast_rms": { "type": "number", "minimum": 0, "maximum": 1 },
+        "warmth_index": { "type": "number", "minimum": 0, "maximum": 1, "description": "mean(R)-mean(B) 的允许偏差；比色温稳健，用于校验偏色方向" },
+        "temperature_k": { "type": "number", "minimum": 0 },
+        "palette_delta_e": { "type": "number", "minimum": 0 },
+        "route_color_delta_e": { "type": "number", "minimum": 0 },
+        "consistency_chi2": { "type": "number", "minimum": 0 },
+        "black_frame_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeMap": {
+      "type": "object",
+      "required": ["view", "basemap", "route_color", "route_width_px", "route_style", "label_style", "zoom_in_sec"],
+      "properties": {
+        "view": { "enum": ["3d_tilt", "2d_top", "satellite_ortho"] },
+        "basemap": { "enum": ["satellite", "vector", "handdrawn", "dark_vector"] },
+        "route_color": { "$ref": "#/$defs/HexColor" },
+        "route_width_px": { "type": "number", "minimum": 1 },
+        "route_style": { "enum": ["flow_dashed", "solid", "moving_dot"] },
+        "label_style": { "type": "string" },
+        "zoom_in_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "hold_sec": { "type": "number", "minimum": 0 },
+        "canvas": { "$ref": "#/$defs/Canvas" }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipePip": {
+      "type": "object",
+      "required": ["corner_radius_px", "border_px", "border_color", "shadow", "position", "enter_animation"],
+      "properties": {
+        "corner_radius_px": { "type": "number", "minimum": 0 },
+        "border_px": { "type": "number", "minimum": 0 },
+        "border_color": { "$ref": "#/$defs/HexColor" },
+        "shadow": {
+          "type": "object",
+          "required": ["dx", "dy", "blur", "opacity"],
+          "properties": {
+            "dx": { "type": "number" },
+            "dy": { "type": "number" },
+            "blur": { "type": "number", "minimum": 0 },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "position": {
+          "type": "object",
+          "required": ["mode", "width_ratio"],
+          "properties": {
+            "mode": { "enum": ["center", "top", "bottom", "custom"] },
+            "width_ratio": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "y_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "enter_animation": {
+          "type": "object",
+          "required": ["type", "duration_sec"],
+          "properties": {
+            "type": { "enum": ["scale_pop", "fade", "slide_up", "none"] },
+            "duration_sec": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeIcon": {
+      "type": "object",
+      "required": ["style", "height_ratio", "transparent_bg", "base"],
+      "properties": {
+        "style": { "enum": ["3d_cartoon", "2d_flat", "skeuomorphic"] },
+        "height_ratio": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "transparent_bg": { "type": "boolean" },
+        "base": {
+          "type": "object",
+          "required": ["color", "corner_radius_px", "label_font"],
+          "properties": {
+            "color": { "$ref": "#/$defs/HexColor" },
+            "corner_radius_px": { "type": "number", "minimum": 0 },
+            "label_font": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeColor": {
+      "type": "object",
+      "description": "调色配方。temperature_k 用灰世界白点估计（McCamy 公式）换算，仅在接近中性色时可靠，因此同时保留 warmth_index 作为稳健代理指标。",
+      "required": ["temperature_k", "saturation_avg", "contrast_rms", "brightness_avg", "palette", "lut"],
+      "properties": {
+        "temperature_k": { "type": "number", "minimum": 1000, "maximum": 20000 },
+        "warmth_index": { "type": "number", "description": "(mean(R)-mean(B))，负值偏蓝，正值偏暖" },
+        "saturation_avg": { "type": "number", "minimum": 0, "maximum": 1, "description": "平均彩度 = mean(max(R,G,B)-min(R,G,B))，即彩度/255 口径（非 HSV 的 S）" },
+        "contrast_rms": { "type": "number", "minimum": 0, "maximum": 1, "description": "亮度标准差（RMS 反差）" },
+        "brightness_avg": { "type": "number", "minimum": 0, "maximum": 1, "description": "平均亮度 = mean(0.2126R+0.7152G+0.0722B)" },
+        "palette": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/HexColor" }
+        },
+        "lut": { "type": "string" },
+        "grade_params": { "type": "object", "additionalProperties": { "type": "number" } }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeSubtitle": {
+      "type": "object",
+      "required": ["font_family", "font_size_px", "color", "stroke_px", "stroke_color", "position_y_ratio", "safe_area"],
+      "properties": {
+        "font_family": { "type": "string" },
+        "font_size_px": { "type": "number", "minimum": 8 },
+        "color": { "$ref": "#/$defs/HexColor" },
+        "stroke_px": { "type": "number", "minimum": 0 },
+        "stroke_color": { "$ref": "#/$defs/HexColor" },
+        "position_y_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "safe_area": {
+          "type": "object",
+          "required": ["top_ratio", "bottom_ratio"],
+          "properties": {
+            "top_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "bottom_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "max_chars_per_line": { "type": "integer", "minimum": 4 }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeCover": {
+      "type": "object",
+      "required": ["title_font", "title_size_px", "title_color", "safe_area"],
+      "properties": {
+        "title_font": { "type": "string" },
+        "title_size_px": { "type": "number", "minimum": 8 },
+        "title_color": { "$ref": "#/$defs/HexColor" },
+        "accent_color": { "$ref": "#/$defs/HexColor" },
+        "safe_area": {
+          "type": "object",
+          "required": ["left_ratio", "right_ratio", "top_ratio", "bottom_ratio"],
+          "properties": {
+            "left_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "right_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "top_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+            "bottom_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "max_title_chars": { "type": "integer", "minimum": 4 }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeAudio": {
+      "type": "object",
+      "required": ["voice", "loudness_lufs", "bgm_gain_db", "sfx"],
+      "properties": {
+        "voice": {
+          "type": "object",
+          "required": ["model", "voice_id", "speed"],
+          "properties": {
+            "model": { "type": "string" },
+            "voice_id": { "type": "string" },
+            "speed": { "type": "number", "exclusiveMinimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "loudness_lufs": { "type": "number", "maximum": 0 },
+        "bgm_gain_db": { "type": "number" },
+        "bgm_ducking_db": { "type": "number" },
+        "sfx": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "gain_db"],
+            "properties": {
+              "name": { "type": "string" },
+              "gain_db": { "type": "number" },
+              "at_sec": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "RecipeCardPayload": {
+      "type": "object",
+      "required": ["recipe_id", "version", "locked", "map", "pip", "icon", "color", "subtitle", "cover", "audio", "tolerances"],
+      "properties": {
+        "recipe_id": { "$ref": "#/$defs/Slug" },
+        "version": { "type": "string" },
+        "locked": { "type": "boolean", "description": "锁定后，任何节点都不得再改动配方参数，只能改容差" },
+        "source": { "type": "string" },
+        "map": { "$ref": "#/$defs/RecipeMap" },
+        "pip": { "$ref": "#/$defs/RecipePip" },
+        "icon": { "$ref": "#/$defs/RecipeIcon" },
+        "color": { "$ref": "#/$defs/RecipeColor" },
+        "subtitle": { "$ref": "#/$defs/RecipeSubtitle" },
+        "cover": { "$ref": "#/$defs/RecipeCover" },
+        "audio": { "$ref": "#/$defs/RecipeAudio" },
+        "tolerances": { "$ref": "#/$defs/Tolerances" },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "status": { "enum": ["uncalibrated", "calibrated"] },
+            "sample_count": { "type": "integer", "minimum": 0 },
+            "method": { "type": "string" },
+            "measured_median": { "type": "object", "additionalProperties": { "type": "number" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "BreakdownPayload": {
+      "type": "object",
+      "required": ["report_path", "deconstructed_videos", "formulas", "visual_inventory"],
+      "properties": {
+        "report_path": { "type": "string" },
+        "benchmark_account": { "type": "string" },
+        "deconstructed_videos": {
+          "type": "array",
+          "minItems": 3,
+          "description": "至少 3 条，只拆 1 条不构成可复用规律",
+          "items": {
+            "type": "object",
+            "required": ["url", "title", "duration_sec", "structure"],
+            "properties": {
+              "url": { "type": "string" },
+              "title": { "type": "string" },
+              "likes": { "type": "integer", "minimum": 0 },
+              "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+              "structure": {
+                "type": "array",
+                "minItems": 3,
+                "items": {
+                  "type": "object",
+                  "required": ["t_sec", "element", "note"],
+                  "properties": {
+                    "t_sec": { "type": "number", "minimum": 0 },
+                    "t_end_sec": { "type": "number", "minimum": 0 },
+                    "element": { "type": "string" },
+                    "note": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "formulas": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "template"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "enum": ["反常识型", "避坑型", "清单型", "对比型", "剧情型"] },
+              "template": { "type": "string" },
+              "evidence_video": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "visual_inventory": {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["layer", "description", "recipe_section"],
+            "properties": {
+              "layer": { "type": "string" },
+              "description": { "type": "string" },
+              "recipe_section": { "enum": ["map", "pip", "icon", "color", "subtitle", "cover", "audio"] },
+              "observed_at_sec": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ScriptPayload": {
+      "type": "object",
+      "required": ["topic", "title", "hook", "target_duration_sec", "narration_total_chars", "shots"],
+      "properties": {
+        "topic": { "type": "string" },
+        "title": { "type": "string" },
+        "hook": { "type": "string" },
+        "formula_used": { "type": "string" },
+        "target_duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "narration_total_chars": { "type": "integer", "minimum": 1 },
+        "shots": {
+          "type": "array",
+          "minItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["shot_id", "index", "t_start", "t_end", "shot_type", "layers", "narration_text", "subtitle_text"],
+            "properties": {
+              "shot_id": { "$ref": "#/$defs/ShotId" },
+              "index": { "type": "integer", "minimum": 1 },
+              "t_start": { "type": "number", "minimum": 0 },
+              "t_end": { "type": "number", "exclusiveMinimum": 0 },
+              "shot_type": { "enum": ["map", "scenery", "icon", "cover", "transition"] },
+              "layers": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "enum": ["map", "pip", "icon", "subtitle", "bgm", "sfx"] }
+              },
+              "narration_text": { "type": "string" },
+              "subtitle_text": { "type": "string", "maxLength": 40 },
+              "sfx": { "type": "array", "items": { "type": "string" } },
+              "camera_move": { "type": "string" },
+              "prompt_video": { "type": "string" },
+              "prompt_icon": { "type": "string" },
+              "notes": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ShotMapPayload": {
+      "type": "object",
+      "required": ["assignments", "pipeline_totals"],
+      "properties": {
+        "assignments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["shot_id", "pipeline", "model", "tool", "expected_artifacts"],
+            "properties": {
+              "shot_id": { "$ref": "#/$defs/ShotId" },
+              "pipeline": { "enum": ["A", "B", "C", "D"], "description": "A=地图 B=景点视频 C=图标 D=封面" },
+              "model": { "type": "string" },
+              "tool": { "type": "string" },
+              "expected_artifacts": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Slug" } },
+              "priority": { "enum": ["high", "medium", "low"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pipeline_totals": {
+          "type": "object",
+          "required": ["A", "B", "C", "D"],
+          "properties": {
+            "A": { "type": "integer", "minimum": 0 },
+            "B": { "type": "integer", "minimum": 0 },
+            "C": { "type": "integer", "minimum": 0 },
+            "D": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "GeoPoint": {
+      "type": "object",
+      "required": ["name", "lng", "lat"],
+      "properties": {
+        "name": { "type": "string" },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 },
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 }
+      },
+      "additionalProperties": false
+    },
+
+    "MapAssetPayload": {
+      "type": "object",
+      "required": ["shot_id", "route", "render", "animation"],
+      "properties": {
+        "shot_id": { "$ref": "#/$defs/ShotId" },
+        "route": {
+          "type": "object",
+          "required": ["origin", "destination", "waypoints", "distance_km"],
+          "properties": {
+            "origin": { "$ref": "#/$defs/GeoPoint" },
+            "destination": { "$ref": "#/$defs/GeoPoint" },
+            "waypoints": { "type": "array", "items": { "$ref": "#/$defs/GeoPoint" } },
+            "distance_km": { "type": "number", "exclusiveMinimum": 0 },
+            "drive_time_min": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "render": {
+          "type": "object",
+          "required": ["engine", "basemap", "route_color", "route_width_px", "route_style", "canvas"],
+          "properties": {
+            "engine": { "type": "string" },
+            "basemap": { "enum": ["satellite", "vector", "handdrawn", "dark_vector"] },
+            "tiles_source": { "type": "string" },
+            "route_color": { "$ref": "#/$defs/HexColor" },
+            "route_width_px": { "type": "number", "minimum": 1 },
+            "route_style": { "enum": ["flow_dashed", "solid", "moving_dot"] },
+            "canvas": { "$ref": "#/$defs/Canvas" }
+          },
+          "additionalProperties": false
+        },
+        "animation": {
+          "type": "object",
+          "required": ["zoom_in_sec", "hold_sec", "follow_head"],
+          "properties": {
+            "zoom_in_sec": { "type": "number", "minimum": 0 },
+            "hold_sec": { "type": "number", "minimum": 0 },
+            "follow_head": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "VideoAssetPayload": {
+      "type": "object",
+      "required": ["shot_id", "prompt_used", "model", "seed", "generation"],
+      "properties": {
+        "shot_id": { "$ref": "#/$defs/ShotId" },
+        "prompt_used": { "type": "string", "minLength": 10, "description": "实际送给模型的完整提示词，必须原样存档，否则无法复现" },
+        "negative_prompt": { "type": "string" },
+        "model": { "type": "string" },
+        "seed": { "type": "integer", "minimum": 0 },
+        "reference_image": { "type": "string" },
+        "generation": {
+          "type": "object",
+          "required": ["aspect_ratio", "duration_sec", "camera_move"],
+          "properties": {
+            "aspect_ratio": { "enum": ["9:16", "16:9", "1:1"] },
+            "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+            "camera_move": { "type": "string" },
+            "loopable": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "consistency": {
+          "type": "object",
+          "required": ["color_grade_applied", "recipe_section"],
+          "properties": {
+            "color_grade_applied": { "type": "boolean" },
+            "recipe_section": { "const": "color" },
+            "palette_hit_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "IconAssetPayload": {
+      "type": "object",
+      "required": ["icons"],
+      "properties": {
+        "icons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["icon_id", "name", "style", "model", "prompt_used", "transparent_bg", "canvas_px"],
+            "properties": {
+              "icon_id": { "$ref": "#/$defs/Slug" },
+              "name": { "type": "string" },
+              "style": { "enum": ["3d_cartoon", "2d_flat", "skeuomorphic"] },
+              "model": { "type": "string" },
+              "prompt_used": { "type": "string", "minLength": 5 },
+              "seed": { "type": "integer", "minimum": 0 },
+              "transparent_bg": { "type": "boolean" },
+              "canvas_px": { "$ref": "#/$defs/Canvas" },
+              "for_shot": { "$ref": "#/$defs/ShotId" },
+              "anchor": { "enum": ["top_left", "top_right", "bottom_left", "bottom_right", "center"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "CoverAssetPayload": {
+      "type": "object",
+      "required": ["title_text", "layout"],
+      "properties": {
+        "title_text": { "type": "string", "maxLength": 30 },
+        "subtitle_text": { "type": "string", "maxLength": 40 },
+        "layout": {
+          "type": "object",
+          "required": ["template", "title_font", "title_size_px", "title_color", "safe_area"],
+          "properties": {
+            "template": { "type": "string" },
+            "title_font": { "type": "string" },
+            "title_size_px": { "type": "number", "minimum": 8 },
+            "title_color": { "$ref": "#/$defs/HexColor" },
+            "accent_color": { "$ref": "#/$defs/HexColor" },
+            "safe_area": {
+              "type": "object",
+              "required": ["left_ratio", "right_ratio", "top_ratio", "bottom_ratio"],
+              "properties": {
+                "left_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+                "right_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+                "top_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+                "bottom_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+              },
+              "additionalProperties": false
+            },
+            "text_bbox": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": { "type": "number" },
+              "description": "[x1,y1,x2,y2]，归一化到 0-1"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "AudioPayload": {
+      "type": "object",
+      "required": ["narration", "mix"],
+      "properties": {
+        "narration": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["segment_id", "shot_id", "t_start", "t_end", "text", "model", "voice_id", "chars"],
+            "properties": {
+              "segment_id": { "type": "string", "pattern": "^N[0-9]{2,3}$" },
+              "shot_id": { "$ref": "#/$defs/ShotId" },
+              "t_start": { "type": "number", "minimum": 0 },
+              "t_end": { "type": "number", "exclusiveMinimum": 0 },
+              "text": { "type": "string", "minLength": 1 },
+              "chars": { "type": "integer", "minimum": 1 },
+              "model": { "type": "string" },
+              "voice_id": { "type": "string" },
+              "speed": { "type": "number", "exclusiveMinimum": 0 },
+              "loudness_lufs": { "type": "number", "maximum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "mix": {
+          "type": "object",
+          "required": ["bgm_gain_db", "sfx", "target_loudness_lufs"],
+          "properties": {
+            "bgm_name": { "type": "string" },
+            "bgm_gain_db": { "type": "number" },
+            "bgm_ducking_db": { "type": "number" },
+            "sfx": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "at_sec", "gain_db"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "at_sec": { "type": "number", "minimum": 0 },
+                  "gain_db": { "type": "number" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "target_loudness_lufs": { "type": "number", "maximum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "TimelinePayload": {
+      "type": "object",
+      "required": ["canvas", "tracks", "color_grade", "output"],
+      "properties": {
+        "canvas": {
+          "type": "object",
+          "required": ["width", "height", "fps"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "fps": { "type": "number", "exclusiveMinimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "tracks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["track_id", "kind", "clips"],
+            "properties": {
+              "track_id": { "type": "string" },
+              "kind": { "enum": ["video", "overlay", "audio", "subtitle"] },
+              "clips": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["shot_id", "asset_id", "in_sec", "out_sec", "timeline_start_sec"],
+                  "properties": {
+                    "shot_id": { "$ref": "#/$defs/ShotId" },
+                    "asset_id": { "$ref": "#/$defs/Slug" },
+                    "in_sec": { "type": "number", "minimum": 0 },
+                    "out_sec": { "type": "number", "exclusiveMinimum": 0 },
+                    "timeline_start_sec": { "type": "number", "minimum": 0 },
+                    "speed": { "type": "number", "exclusiveMinimum": 0 },
+                    "transform": {
+                      "type": "object",
+                      "properties": {
+                        "x": { "type": "number" },
+                        "y": { "type": "number" },
+                        "scale": { "type": "number", "exclusiveMinimum": 0 },
+                        "rotation_deg": { "type": "number" }
+                      },
+                      "additionalProperties": false
+                    },
+                    "transition_in": { "enum": ["none", "fade", "scale_pop", "whip", "glitch"] },
+                    "transition_out": { "enum": ["none", "fade", "scale_pop", "whip", "glitch"] }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "color_grade": {
+          "type": "object",
+          "required": ["applied", "params"],
+          "properties": {
+            "applied": { "type": "boolean" },
+            "lut": { "type": "string" },
+            "params": { "type": "object", "additionalProperties": { "type": "number" } }
+          },
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "required": ["path", "duration_sec"],
+          "properties": {
+            "path": { "type": "string" },
+            "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+            "width": { "type": "integer" },
+            "height": { "type": "integer" },
+            "fps": { "type": "number" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "PublishPayload": {
+      "type": "object",
+      "required": ["title", "cover_artifact_id", "tags", "publish_time", "constraints_check"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 55 },
+        "title_options": { "type": "array", "maxItems": 5, "items": { "type": "string", "maxLength": 55 } },
+        "cover_artifact_id": { "$ref": "#/$defs/Slug" },
+        "tags": { "type": "array", "minItems": 3, "maxItems": 10, "items": { "type": "string" } },
+        "publish_time": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$" },
+        "first_comment": { "type": "string" },
+        "pinned_comment": { "type": "string" },
+        "constraints_check": {
+          "type": "object",
+          "required": ["duration_ok", "resolution_ok", "cover_ratio_ok", "title_length_ok"],
+          "properties": {
+            "duration_ok": { "type": "boolean" },
+            "resolution_ok": { "type": "boolean" },
+            "cover_ratio_ok": { "type": "boolean" },
+            "title_length_ok": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

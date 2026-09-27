@@ -1,0 +1,24 @@
+{
+  "_comment": "AI Factory 配置文件 · 复制为 config.json 后填写",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8765,
+    "debug": false
+  },
+  "llm": {
+    "enabled": true,
+    "provider": "doubao",
+    "api_key": "YOUR_API_KEY_HERE",
+    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+    "models": {
+      "chat": "YOUR_CHAT_MODEL_ENDPOINT",
+      "image": "YOUR_IMAGE_MODEL",
+      "tts_voice": "zh_female_wanwanwan"
+    }
+  },
+  "factory": {
+    "projects_dir": "projects",
+    "ffmpeg_path": "ffmpeg",
+    "source_footage_root": ""
+  }
+}

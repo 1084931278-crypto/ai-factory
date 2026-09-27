@@ -1,0 +1,101 @@
+{
+  "recipe_id": "recipe.nizhoudao.v1",
+  "version": "1.1.0",
+  "locked": true,
+  "source": "基于《视觉配方卡 · 模板》落地为机器可读版；所有数值为初版设计基线（baseline），尚未用对标片实测值校准。",
+  "map": {
+    "view": "3d_tilt",
+    "basemap": "dark_vector",
+    "route_color": "#12B886",
+    "route_width_px": 6,
+    "route_style": "flow_dashed",
+    "label_style": "白色 6px 圆点 + #1B4965 圆角标签框 + 1px 引线",
+    "zoom_in_sec": 2.0,
+    "hold_sec": 1.2,
+    "canvas": { "width": 1080, "height": 1920 }
+  },
+  "pip": {
+    "corner_radius_px": 24,
+    "border_px": 6,
+    "border_color": "#FFFFFF",
+    "shadow": { "dx": 0, "dy": 8, "blur": 24, "opacity": 0.45 },
+    "position": { "mode": "center", "width_ratio": 0.8, "y_ratio": 0.42 },
+    "enter_animation": { "type": "scale_pop", "duration_sec": 0.3 }
+  },
+  "icon": {
+    "style": "3d_cartoon",
+    "height_ratio": 0.25,
+    "transparent_bg": true,
+    "base": {
+      "color": "#F2A03D",
+      "corner_radius_px": 28,
+      "label_font": "思源黑体 Bold"
+    }
+  },
+  "color": {
+    "temperature_k": 7500,
+    "warmth_index": -0.045,
+    "saturation_avg": 0.3,
+    "contrast_rms": 0.22,
+    "brightness_avg": 0.32,
+    "palette": ["#0F2A3D", "#1B4965", "#12B886", "#E8F1F2", "#F2A03D"],
+    "lut": "cool_blue_dark_v1.cube",
+    "grade_params": {
+      "contrast": 15,
+      "saturation": -10,
+      "temperature": -20,
+      "highlight": -30,
+      "shadow": 10
+    }
+  },
+  "subtitle": {
+    "font_family": "思源黑体 Heavy",
+    "font_size_px": 64,
+    "color": "#FFFFFF",
+    "stroke_px": 5,
+    "stroke_color": "#0F2A3D",
+    "position_y_ratio": 0.72,
+    "safe_area": { "top_ratio": 0.08, "bottom_ratio": 0.18 },
+    "max_chars_per_line": 14
+  },
+  "cover": {
+    "title_font": "思源黑体 Heavy",
+    "title_size_px": 96,
+    "title_color": "#FFFFFF",
+    "accent_color": "#12B886",
+    "safe_area": { "left_ratio": 0.08, "right_ratio": 0.08, "top_ratio": 0.12, "bottom_ratio": 0.2 },
+    "max_title_chars": 14
+  },
+  "audio": {
+    "voice": {
+      "model": "语音合成模型（豆包 / MiniMax / 火山引擎任一）",
+      "voice_id": "male_calm_young_01",
+      "speed": 1.05
+    },
+    "loudness_lufs": -14.0,
+    "bgm_gain_db": -18.0,
+    "bgm_ducking_db": -6.0,
+    "sfx": [
+      { "name": "嗖-whoosh-转场", "gain_db": -12.0, "at_sec": 2.0 },
+      { "name": "弹出-pop", "gain_db": -10.0, "at_sec": 6.5 },
+      { "name": "海浪环境音-loop", "gain_db": -24.0, "at_sec": 0.0 }
+    ]
+  },
+  "tolerances": {
+    "brightness_avg": 0.06,
+    "saturation_avg": 0.06,
+    "contrast_rms": 0.05,
+    "warmth_index": 0.06,
+    "temperature_k": 1200,
+    "palette_delta_e": 12,
+    "route_color_delta_e": 8,
+    "consistency_chi2": 0.15,
+    "black_frame_ratio": 0.02
+  },
+  "calibration": {
+    "status": "uncalibrated",
+    "sample_count": 0,
+    "method": "跑满 3 条成片后，用 check_visual.py --calibrate 输出的各指标中位数回填本文件的 color 段与 tolerances 段；回填后把 status 改为 calibrated，并把 locked 保持为 true。声音响度目标需先对 3 条对标片跑 ffmpeg loudnorm 实测，再定稿。",
+    "measured_median": {}
+  }
+}
