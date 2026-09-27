@@ -203,6 +203,11 @@ def serve_project_file(name, filename):
         return "Not found", 404
     return send_from_directory(str(p.resolve()), filename)
 
+@app.route("/workbench")
+def workbench():
+    workbench_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ai-workbench')
+    return send_from_directory(workbench_dir, 'ai-workbench.html')
+
 # ============================================================
 # 入口
 # ============================================================
