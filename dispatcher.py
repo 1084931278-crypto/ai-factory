@@ -17,8 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BASE_DIR))
-sys.path.insert(0, str(BASE_DIR / "scripts"))
+sys.path.insert(0, str(BASE_DIR))         # 使 llm_client.py 可导入
+sys.path.insert(0, str(BASE_DIR / "scripts"))  # 使 roles.py 可导入
 
 # LLM 客户端 + 角色人设
 import llm_client
