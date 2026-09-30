@@ -14,6 +14,14 @@ from pathlib import Path
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_from_directory
 
+# 控制台编码兜底：日志里的 emoji 在 GBK 控制台 / 被重定向(管道、日志文件、AI 工具终端)
+# 时会触发 UnicodeEncodeError 直接让进程崩溃。保留原编码，只把无法编码的字符替换掉。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except Exception:
+        pass
+
 # 把当前目录加入 path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
